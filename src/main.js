@@ -462,13 +462,6 @@ function shoot() {
 }
 
 
-document.addEventListener("pointerdown", (event) => {
-    if (event.button === 0 && document.pointerLockElement === canvas) {
-        shoot();
-    }
-});
-
-
 function splitAsteroid(asteroid) {
     const index = asteroids.indexOf(asteroid);
 
@@ -562,8 +555,16 @@ const camera = new ArcRotateCamera(
 
 const mouseSensitivity = 0.002;
 
-canvas.addEventListener("click", () => {
-  canvas.requestPointerLock();
+document.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+        return;
+    }
+
+    if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+    }
+
+    shoot();
 });
 
 canvas.addEventListener("mousemove", (event) => {
