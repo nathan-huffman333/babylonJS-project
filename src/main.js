@@ -39,7 +39,6 @@ const COLLISION_SOLVER_ITERATIONS = 4;
 const BULLET_SPEED = 80;
 const BULLET_LIFETIME = 2.0;
 const ASTEROID_SPLIT_FACTOR = 0.5;
-// const BULLET_FADE_DISTANCE = 3.0;
 const BULLET_FADE_TIME = 0.25;
 
 
@@ -452,7 +451,7 @@ function shoot() {
 
     const direction = ray.direction.normalize();
 
-    const bulletStart = direction.scale(1);
+    const bulletStart = camera.position.add(direction.scale(1));
 
     const bullet = new Bullet(
         bulletStart,
@@ -463,8 +462,8 @@ function shoot() {
 }
 
 
-canvas.addEventListener("mousedown", (event) => {
-    if (event.button === 0) {
+document.addEventListener("mousedown", (event) => {
+    if (event.button === 0 && document.pointerLockElement === canvas) {
         shoot();
     }
 });
