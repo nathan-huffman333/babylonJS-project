@@ -462,7 +462,7 @@ function shoot() {
 }
 
 
-document.addEventListener("mousedown", (event) => {
+document.addEventListener("pointerdown", (event) => {
     if (event.button === 0 && document.pointerLockElement === canvas) {
         shoot();
     }
