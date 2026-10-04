@@ -9,13 +9,13 @@ import {
   Color3,
   Mesh,
   VertexBuffer,
-} from "@babylonjs/core";
+} from "./@babylonjs/core";
 
 import {
   AdvancedDynamicTexture,
   Rectangle,
   Ellipse
-} from "@babylonjs/gui";
+} from "./@babylonjs/gui";
 
 import "./style.css";
 
