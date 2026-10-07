@@ -76,7 +76,7 @@ explosionSound.volume = 0.3;
 const asteroidCollisionSounds = Array.from(
     { length: 8 },
     () => {
-        const sound = new Audio(`${SOUND_PATH}asteroid_collision.mp3`);
+        const sound = new Audio(`${import.meta.env.BASE_URL}sounds/asteroid_collision.mp3`);
         sound.volume = 0.1;
         return sound;
     }
