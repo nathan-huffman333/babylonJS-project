@@ -34,7 +34,7 @@ const ASTEROID_COUNT = 20;
 const ASTEROID_SPLIT_FACTOR = 0.5;
 const COLLISION_SOLVER_ITERATIONS = 4;
 
-const PLAYER_COLLISION_RADIUS = 1.25;
+const PLAYER_COLLISION_RADIUS = 1.0;
 // Don't spawn asteroids too close to the center.
 const MIN_SPAWN_DISTANCE = PLAYER_COLLISION_RADIUS + 11.5;
 
@@ -57,6 +57,19 @@ const canvas = document.getElementById("renderCanvas");
 
 const engine = new Engine(canvas, true);
 const scene = new Scene(engine);
+
+// =====================================================
+// SOUND EFFECT SETUP
+// =====================================================
+
+const shootSound = new Audio("sounds/shoot_laser.mp3");
+shootSound.volume = 0.4;
+
+const hitSound = new Audio("sounds/hit_sound.mp3");
+hitSound.volume = 0.4;
+
+const explosionSound = new Audio("sounds/explosion.mp3");
+explosionSound.volume = 0.4;
 
 // =====================================================
 // BOUNDARY
@@ -597,6 +610,10 @@ function shoot() {
     if (gameOver || victory) {
         return;
     }
+
+    shootSound.currentTime = 0;
+    shootSound.play();
+
     // Get the center of the screen
     const screenX = engine.getRenderWidth() / 2;
     const screenY = engine.getRenderHeight() / 2;
@@ -622,6 +639,9 @@ function shoot() {
 
 
 function splitAsteroid(asteroid) {
+    explosionSound.currentTime = 0;
+    explosionSound.play();
+
     const index = asteroids.indexOf(asteroid);
 
     if (index === -1) {
@@ -704,6 +724,9 @@ function splitAsteroid(asteroid) {
 
 
 function damagePlayer(amount) {
+    hitSound.currentTime = 0;
+    hitSound.play();
+
     playerHealth -= amount;
     playerHealth = Math.max(0, playerHealth);
 
