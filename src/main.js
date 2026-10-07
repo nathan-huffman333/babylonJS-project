@@ -14,7 +14,8 @@ import {
 import {
   AdvancedDynamicTexture,
   Rectangle,
-  Ellipse
+  Ellipse,
+  TextBlock
 } from "@babylonjs/gui";
 
 import "./style.css";
@@ -23,21 +24,27 @@ import "./style.css";
 // CONFIGURATION VARIABLES
 // =====================================================
 // Variables to control initial, end, and adding asteroid speeds
-const BASE_ASTEROID_SPEED = 5.0; 
+const BASE_ASTEROID_SPEED = 6.0; 
 const MAX_ASTEROID_SPEED = 25;
 const ASTEROID_SPEED_INCREASE = 0.03;
 // Number of starting asteroids.
-const ASTEROID_COUNT = 30;
+const ASTEROID_COUNT = 32;
 const ASTEROID_SPLIT_FACTOR = 0.5;
 const COLLISION_SOLVER_ITERATIONS = 4;
 
-const PLAYER_COLLISION_RADIUS = 0.5;
+const PLAYER_COLLISION_RADIUS = 1;
 // Don't spawn asteroids too close to the center.
 const MIN_SPAWN_DISTANCE = PLAYER_COLLISION_RADIUS + 11.5;
 
 const BULLET_SPEED = 80;
 const BULLET_LIFETIME = 2.0;
 const BULLET_FADE_TIME = 0.25;
+
+const PLAYER_MAX_HEALTH = 100;
+const ASTEROID_DAMAGE = 25;
+const PLAYER_DAMAGE_COOLDOWN = 1.0;
+let playerDamageCooldown = 0;
+let playerHealth = PLAYER_MAX_HEALTH;
 
 // =====================================================
 // SCENE SETUP
@@ -47,11 +54,10 @@ const canvas = document.getElementById("renderCanvas");
 const engine = new Engine(canvas, true);
 const scene = new Scene(engine);
 
-
 // =====================================================
 // BOUNDARY
 // =====================================================
-const BOUNDARY_RADIUS = 30; 
+const BOUNDARY_RADIUS = 25; 
 const BOUNDARY_MESH_DIAMETER = BOUNDARY_RADIUS * 2;
 
 
@@ -237,8 +243,8 @@ class Asteroid {
 
 
     handleCenterCollision(centerRadius, speedIncrease, previousPosition) {
-        // Safety check. This also prevents the solver passes
-        // from crashing if no previous position is supplied.
+        const collisionRadius = centerRadius + this.radius;
+
         if (!previousPosition) {
             const distance = this.position.length();
             const collisionRadius = centerRadius + this.radius;
@@ -260,10 +266,7 @@ class Asteroid {
             return;
         }
 
-        const collisionRadius = centerRadius + this.radius;
-
         const movement = this.position.subtract(previousPosition);
-
         const movementLengthSquared = movement.lengthSquared();
 
         // -------------------------------------------------
@@ -315,14 +318,27 @@ class Asteroid {
         let normal;
 
         if (closestDistance > 0.00001) {
-            normal = closestPoint.normalize();
+            normal = closestPoint.clone().normalize();
         } else if (previousPosition.length() > 0.00001) {
-            normal = previousPosition.normalize();
+            normal = previousPosition.clone().normalize();
         } else {
             normal = new Vector3(1, 0, 0);
         }
 
         this.resolveCenterCollision(centerRadius, speedIncrease, normal);
+
+        return true;
+    }
+
+
+    checkPlayerCollision(playerRadius) {
+        const collisionDistance = this.radius + playerRadius;
+
+        if (this.position.lengthSquared() <= collisionDistance * collisionDistance) {
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -339,7 +355,7 @@ function generateAsteroids(count) {
 
         if (sizeRoll < 0.20) {
             sizeLevel = 0; // 20% large
-            radius = 4.0;
+            radius = 3.0;
             subdivisions = 3;
         } else if (sizeRoll < 0.55) {
             sizeLevel = 1; // 35% medium
@@ -680,6 +696,27 @@ function splitAsteroid(asteroid) {
         asteroids.push(newAsteroid);
     }
 }
+
+
+function damagePlayer(amount) {
+    playerHealth -= amount;
+    playerHealth = Math.max(0, playerHealth);
+
+    healthText.text = `HEALTH: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
+
+    if (playerHealth <= 0) {
+        playerDied();
+    }
+}
+
+
+function playerDied() {
+    console.log("Player died");
+
+    // Stop gameplay here, or show a game-over screen.
+}
+
+
 // =====================================================
 // Camera Setup
 // =====================================================
@@ -688,7 +725,7 @@ const camera = new ArcRotateCamera(
   "camera",
   Math.PI / 2,
   Math.PI / 3,
-  10,
+  0,
   Vector3.Zero(),
   scene
 );
@@ -790,17 +827,36 @@ gui.addControl(circle);
 gui.addControl(horizontal);
 gui.addControl(vertical);
 
+// =====================================================
+// Health GUI
+// =====================================================
+
+const healthText = new TextBlock();
+
+healthText.text = `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
+healthText.color = "white";
+healthText.fontSize = 24;
+
+healthText.textHorizontalAlignment =
+    TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
+
+healthText.textVerticalAlignment =
+    TextBlock.VERTICAL_ALIGNMENT_TOP;
+
+healthText.left = "20px";
+healthText.top = "20px";
+
+gui.addControl(healthText);
 
 // =====================================================
 // Game Loop (Physics Update)
 // =====================================================
 engine.runRenderLoop(() => {
-    // Asteroid-Asteroid Collision Checks
     const deltaTime = engine.getDeltaTime() / 1000;
-        
     const clampedDeltaTime = Math.min(deltaTime, 0.033);
+    playerDamageCooldown -= clampedDeltaTime;
 
-    // 1. Move
+    // Move asteroids
     const previousPositions = new Map();
 
     for (const asteroid of asteroids) {
@@ -809,21 +865,26 @@ engine.runRenderLoop(() => {
         previousPositions.set(asteroid, previousPosition);
     }
 
-    // 2. Center/player collision
+    // Check + damage player
     for (const asteroid of asteroids) {
-        asteroid.handleCenterCollision(
+        const hitPlayer = asteroid.handleCenterCollision(
             PLAYER_COLLISION_RADIUS,
             ASTEROID_SPEED_INCREASE,
             previousPositions.get(asteroid)
         );
+
+        if (hitPlayer && playerDamageCooldown <= 0) {
+            damagePlayer(ASTEROID_DAMAGE);
+            playerDamageCooldown = PLAYER_DAMAGE_COOLDOWN;
+        }
     }
 
-    // 3. Outer Boundary collisions
+    // Outer Boundary collisions
     for (const asteroid of asteroids) {
         asteroid.handleBoundaryCollision(BOUNDARY_RADIUS, ASTEROID_SPEED_INCREASE);
     }
 
-    // 4. Asteroid-asteroid collisions
+    // Asteroid-asteroid collisions
     for (let iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; iteration++) {
         for (let i = 0; i < asteroids.length; i++) {
             for (let j = i + 1; j < asteroids.length; j++) {
@@ -874,7 +935,7 @@ engine.runRenderLoop(() => {
 }
 
 
-    // 4. Render
+    // Render
     scene.render();
 });
 
