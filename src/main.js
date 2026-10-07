@@ -66,10 +66,32 @@ const shootSound = new Audio("sounds/shoot_laser.mp3");
 shootSound.volume = 0.4;
 
 const hitSound = new Audio("sounds/hit_sound.mp3");
-hitSound.volume = 0.4;
+hitSound.volume = 0.3;
 
 const explosionSound = new Audio("sounds/explosion.mp3");
-explosionSound.volume = 0.4;
+explosionSound.volume = 0.3;
+
+// Pool of asteroid collision sounds
+const asteroidCollisionSounds = Array.from(
+    { length: 8 },
+    () => {
+        const sound = new Audio("sounds/asteroid_collision.mp3");
+        sound.volume = 0.1;
+        return sound;
+    }
+);
+
+let asteroidSoundIndex = 0;
+
+function playAsteroidCollisionSound() {
+    const sound = asteroidCollisionSounds[asteroidSoundIndex];
+
+    sound.currentTime = 0;
+
+    sound.play()
+
+    asteroidSoundIndex = (asteroidSoundIndex + 1) % asteroidCollisionSounds.length;
+}
 
 // =====================================================
 // BOUNDARY
@@ -131,7 +153,7 @@ class Asteroid {
 
         // No collision
         if (distance >= minimumDistance) {
-            return;
+            return false;
         }
 
         // Avoid division by zero if two asteroids occupy exactly the same position
@@ -189,6 +211,8 @@ class Asteroid {
         
         a1.velocity.scaleInPlace(1 + COLLISION_SPEED_INCREASE);
         a2.velocity.scaleInPlace(1 + COLLISION_SPEED_INCREASE);
+
+        return true;
     }
         
     // Handles collision response with the boundary sphere
@@ -1084,11 +1108,26 @@ engine.runRenderLoop(() => {
         asteroid.handleBoundaryCollision(BOUNDARY_RADIUS, ASTEROID_SPEED_INCREASE);
     }
 
+    
+    const collisionSoundsThisFrame = new Set();
     // Asteroid-asteroid collisions
     for (let iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; iteration++) {
         for (let i = 0; i < asteroids.length; i++) {
             for (let j = i + 1; j < asteroids.length; j++) {
-                Asteroid.handleAsteroidCollision(asteroids[i], asteroids[j]);
+                const a1 = asteroids[i];
+                const a2 = asteroids[j];
+                
+                const collided = Asteroid.handleAsteroidCollision(asteroids[i], asteroids[j]);
+
+                if (collided) {
+                    const key = `${i}-${j}`;
+
+                    if (!collisionSoundsThisFrame.has(key)) {
+                        collisionSoundsThisFrame.add(key);
+
+                        playAsteroidCollisionSound();
+                    }
+                }
             }
         }
 
