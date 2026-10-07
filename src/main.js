@@ -7,8 +7,11 @@ import {
   MeshBuilder,
   StandardMaterial,
   Color3,
+  Color4,
   Mesh,
   VertexBuffer,
+  DirectionalLight,
+  GlowLayer
 } from "@babylonjs/core";
 
 import {
@@ -57,6 +60,76 @@ const canvas = document.getElementById("renderCanvas");
 
 const engine = new Engine(canvas, true);
 const scene = new Scene(engine);
+scene.clearColor = new Color4(0.002, 0.004, 0.015, 1);
+
+function createStarfield(count = 1000) {
+    const stars = [];
+
+    for (let i = 0; i < count; i++) {
+        const radius = 35 + Math.random() * 80;
+
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+
+        const position = new Vector3(
+            radius * Math.sin(phi) * Math.cos(theta),
+            radius * Math.sin(phi) * Math.sin(theta),
+            radius * Math.cos(phi)
+        );
+
+        const star = MeshBuilder.CreateSphere(
+            `star_${i}`,
+            {
+                diameter: 0.05 + Math.random() * 0.12,
+                segments: 4
+            },
+            scene
+        );
+
+        star.position.copyFrom(position);
+
+        const material = new StandardMaterial(`starMat_${i}`, scene);
+
+        const brightness = 0.7 + Math.random() * 0.3;
+
+        const starType = Math.random();
+
+        if (starType < 0.7) {
+            material.emissiveColor = new Color3(
+                brightness,
+                brightness,
+                brightness
+            );
+        } else if (starType < 0.85) {
+            material.emissiveColor = new Color3(
+                brightness * 0.7,
+                brightness * 0.8,
+                brightness
+            );
+        } else {
+            material.emissiveColor = new Color3(
+                brightness,
+                brightness * 0.7,
+                brightness * 0.5
+            );
+        }
+
+        material.disableLighting = true;
+
+        star.material = material;
+
+        stars.push(star);
+    }
+
+    return stars;
+}
+
+createStarfield(1200);
+
+scene.clearColor = new Color4(0.002, 0.004, 0.015, 1);
+
+const glowLayer = new GlowLayer("glow", scene);
+glowLayer.intensity = 1.2;
 
 // =====================================================
 // SOUND EFFECT SETUP
@@ -64,20 +137,26 @@ const scene = new Scene(engine);
 const SOUND_PATH = `${import.meta.env.BASE_URL}sounds/`;
 
 const shootSound = new Audio(`${SOUND_PATH}shoot_laser.mp3`);
-shootSound.volume = 0.4;
+shootSound.volume = 0.5;
 
 const hitSound = new Audio(`${SOUND_PATH}hit_sound.mp3`);
 hitSound.volume = 0.3;
 
 const explosionSound = new Audio(`${SOUND_PATH}explosion.mp3`);
-explosionSound.volume = 0.3;
+explosionSound.volume = 0.2;
+
+const deathSound = new Audio(`${SOUND_PATH}dead.mp3`);
+deathSound.volume = 0.3;
+
+const victorySound = new Audio(`${SOUND_PATH}victory.mp3`);
+victorySound.volume = 0.5;
 
 // Pool of asteroid collision sounds
 const asteroidCollisionSounds = Array.from(
     { length: 8 },
     () => {
         const sound = new Audio(`${import.meta.env.BASE_URL}sounds/asteroid_collision.mp3`);
-        sound.volume = 0.1;
+        sound.volume = 0.025;
         return sound;
     }
 );
@@ -567,7 +646,7 @@ class Bullet {
 
     constructor(position, direction) {
         this.position = position.clone();
-        this.velocity = direction.normalize().scale(BULLET_SPEED);
+        this.velocity = direction.clone().normalize().scale(BULLET_SPEED);
         this.lifetime = BULLET_LIFETIME;
 
         this.fading = false;
@@ -576,20 +655,20 @@ class Bullet {
         this.mesh = MeshBuilder.CreateSphere(
             "bullet",
             {
-                diameter: 0.6,
+                diameter: 0.25,
                 segments: 8
             },
             scene
         );
 
-          this.material = new StandardMaterial(
+        this.material = new StandardMaterial(
             "bulletMaterial",
             scene
         );
 
-        this.material.diffuseColor = new Color3(1, 0, 0);
-
-        this.material.alpha = 1.0;
+        this.material.diffuseColor = new Color3(1, 0., 0);
+        this.material.emissiveColor = new Color3(1, 0, 0);
+        this.material.disableLighting = true;
 
         this.mesh.material = this.material;
         this.mesh.position.copyFrom(this.position);
@@ -627,6 +706,7 @@ class Bullet {
 
     destroy() {
         this.mesh.dispose();
+        this.material.dispose();
     }
 }
 
@@ -637,27 +717,13 @@ function shoot() {
     }
 
     shootSound.currentTime = 0;
-    shootSound.play();
+    shootSound.play().catch(() => {});
 
-    // Get the center of the screen
-    const screenX = engine.getRenderWidth() / 2;
-    const screenY = engine.getRenderHeight() / 2;
-
-    const ray = scene.createPickingRay(
-        screenX,
-        screenY,
-        null,
-        camera
-    );
-
-    const direction = ray.direction.normalize();
+    const direction = camera.getForwardRay(1).direction.normalize();
 
     const bulletStart = camera.position.add(direction.scale(1));
 
-    const bullet = new Bullet(
-        bulletStart,
-        direction
-    );
+    const bullet = new Bullet(bulletStart, direction);
 
     bullets.push(bullet);
 }
@@ -770,6 +836,9 @@ function playerDied() {
 
     gameOver = true;
 
+    deathSound.currentTime = 0;
+    deathSound.play();
+
     // Show game-over screen
     gameOverBackground.isVisible = true;
     gameOverText.isVisible = true;
@@ -797,6 +866,9 @@ function playerWon() {
     if (document.pointerLockElement === canvas) {
         document.exitPointerLock();
     }
+
+    victorySound.currentTime = 0;
+    victorySound.play();
 }
 
 
@@ -846,7 +918,7 @@ const camera = new ArcRotateCamera(
   "camera",
   Math.PI / 2,
   Math.PI / 3,
-  0,
+  0.01,
   Vector3.Zero(),
   scene
 );
@@ -892,10 +964,23 @@ canvas.addEventListener("mousemove", (event) => {
 
 
 const light = new HemisphericLight(
-    "light",
+    "spaceLight",
     new Vector3(0, 1, 0),
     scene
 );
+
+light.intensity = 0.15;
+light.diffuse = new Color3(0.3, 0.4, 0.7);
+light.groundColor = new Color3(0.01, 0.01, 0.03);
+
+const sunLight = new DirectionalLight(
+    "sunLight",
+    new Vector3(-0.5, -1, -0.3),
+    scene
+);
+
+sunLight.intensity = 1.5;
+sunLight.diffuse = new Color3(1.0, 0.85, 0.7);
 
 // =====================================================
 // Wireframe sphere around player
@@ -905,7 +990,7 @@ const sphere = MeshBuilder.CreateSphere(
     "playerSphere",
     {
         diameter: BOUNDARY_MESH_DIAMETER,
-        segments: 160
+        segments: 48
     },
     scene
 );
@@ -914,9 +999,26 @@ const sphere = MeshBuilder.CreateSphere(
 sphere.position = Vector3.Zero();
 
 // Wireframe material
-const sphereMaterial = new StandardMaterial("sphereMaterial", scene);
+const sphereMaterial = new StandardMaterial(
+    "sphereMaterial",
+    scene
+);
+
 sphereMaterial.wireframe = true;
-sphereMaterial.diffuseColor = new Color3(1, 1, 1); // white
+
+sphereMaterial.diffuseColor = new Color3(
+    0.05,
+    0.2,
+    0.5
+);
+
+sphereMaterial.emissiveColor = new Color3(
+    0.05,
+    0.15,
+    0.5
+);
+
+sphereMaterial.alpha = 0.25;
 
 sphere.material = sphereMaterial;
 
