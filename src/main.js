@@ -34,7 +34,7 @@ const ASTEROID_COUNT = 20;
 const ASTEROID_SPLIT_FACTOR = 0.5;
 const COLLISION_SOLVER_ITERATIONS = 4;
 
-const PLAYER_COLLISION_RADIUS = 1.5;
+const PLAYER_COLLISION_RADIUS = 1.25;
 // Don't spawn asteroids too close to the center.
 const MIN_SPAWN_DISTANCE = PLAYER_COLLISION_RADIUS + 11.5;
 
@@ -48,6 +48,7 @@ const PLAYER_DAMAGE_COOLDOWN = 1.0;
 let playerDamageCooldown = 0;
 let playerHealth = PLAYER_MAX_HEALTH;
 let gameOver = false;
+let victory = false;
 
 // =====================================================
 // SCENE SETUP
@@ -62,7 +63,6 @@ const scene = new Scene(engine);
 // =====================================================
 const BOUNDARY_RADIUS = 20; 
 const BOUNDARY_MESH_DIAMETER = BOUNDARY_RADIUS * 2;
-
 
 // =====================================================
 // ASTEROID MANAGEMENT
@@ -594,7 +594,7 @@ class Bullet {
 
 
 function shoot() {
-    if (gameOver) {
+    if (gameOver || victory) {
         return;
     }
     // Get the center of the screen
@@ -733,15 +733,34 @@ function playerDied() {
 }
 
 
+function playerWon() {
+    if (victory || gameOver) {
+        return;
+    }
+
+    victory = true;
+
+    // Show victory screen
+    victoryBackground.isVisible = true;
+    victoryText.isVisible = true;
+    restartButton.isVisible = true;
+
+    // Release mouse so the restart button can be clicked
+    if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+    }
+}
+
+
 function restartGame() {
     // Reset game state
     gameOver = false;
+    victory = false;
     playerHealth = PLAYER_MAX_HEALTH;
     playerDamageCooldown = 0;
 
     // Update health display
-    healthText.text =
-        `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
+    healthText.text = `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
 
     // Remove all asteroids
     for (const asteroid of asteroids) {
@@ -763,6 +782,10 @@ function restartGame() {
     // Hide game-over screen
     gameOverBackground.isVisible = false;
     gameOverText.isVisible = false;
+    
+    victoryBackground.isVisible = false;
+    victoryText.isVisible = false;
+
     restartButton.isVisible = false;
 }
 
@@ -791,7 +814,7 @@ document.addEventListener("pointerdown", (event) => {
         return;
     }
 
-    if (gameOver) {
+    if (gameOver || victory) {
         return;
     }
 
@@ -889,7 +912,7 @@ gui.addControl(vertical);
 const healthText = new TextBlock();
 
 healthText.text = `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
-healthText.color = "white";
+healthText.color = "red";
 healthText.fontSize = 24;
 
 healthText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
@@ -931,6 +954,35 @@ gameOverText.isVisible = false;
 gui.addControl(gameOverText);
 
 // =====================================================
+// Victory GUI
+// =====================================================
+const victoryBackground = new Rectangle();
+
+victoryBackground.width = "100%";
+victoryBackground.height = "100%";
+victoryBackground.background = "black";
+victoryBackground.alpha = 0.7;
+victoryBackground.thickness = 0;
+victoryBackground.isVisible = false;
+
+gui.addControl(victoryBackground);
+
+const victoryText = new TextBlock();
+
+victoryText.text = "VICTORY!";
+victoryText.color = "white";
+victoryText.fontSize = 80;
+victoryText.fontWeight = "bold";
+
+victoryText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_CENTER;
+
+victoryText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_CENTER;
+
+victoryText.isVisible = false;
+
+gui.addControl(victoryText);
+
+// =====================================================
 // Restart Button
 // =====================================================
 
@@ -970,6 +1022,11 @@ engine.runRenderLoop(() => {
     const clampedDeltaTime = Math.min(deltaTime, 0.033);
 
     if (gameOver) {
+        scene.render();
+        return;
+    }
+
+    if (victory) {
         scene.render();
         return;
     }
@@ -1048,6 +1105,11 @@ engine.runRenderLoop(() => {
 
             // Split asteroid
             splitAsteroid(asteroid);
+
+            // If there are no asteroids left, the player wins
+            if (asteroids.length === 0) {
+                playerWon();
+            }
 
             break;
         }
