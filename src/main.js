@@ -61,21 +61,22 @@ const scene = new Scene(engine);
 // =====================================================
 // SOUND EFFECT SETUP
 // =====================================================
+const SOUND_PATH = `${import.meta.env.BASE_URL}sounds/`;
 
-const shootSound = new Audio("sounds/shoot_laser.mp3");
+const shootSound = new Audio(`${SOUND_PATH}shoot_laser.mp3`);
 shootSound.volume = 0.4;
 
-const hitSound = new Audio("sounds/hit_sound.mp3");
+const hitSound = new Audio(`${SOUND_PATH}hit_sound.mp3`);
 hitSound.volume = 0.3;
 
-const explosionSound = new Audio("sounds/explosion.mp3");
+const explosionSound = new Audio(`${SOUND_PATH}explosion.mp3`);
 explosionSound.volume = 0.3;
 
 // Pool of asteroid collision sounds
 const asteroidCollisionSounds = Array.from(
     { length: 8 },
     () => {
-        const sound = new Audio("sounds/asteroid_collision.mp3");
+        const sound = new Audio(`${SOUND_PATH}asteroid_collision.mp3`);
         sound.volume = 0.1;
         return sound;
     }
