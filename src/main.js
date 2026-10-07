@@ -22,25 +22,22 @@ import "./style.css";
 // =====================================================
 // CONFIGURATION VARIABLES
 // =====================================================
-// Variable to control initial/base asteroid speed
+// Variables to control initial, end, and adding asteroid speeds
 const BASE_ASTEROID_SPEED = 5.0; 
-
-// Variable to control the speed increment upon boundary collision
-const ASTEROID_INC_VARIANCE = 0.05; 
-
-// Don't spawn asteroids too close to the center.
-const MIN_SPAWN_DISTANCE = 20;
-
+const MAX_ASTEROID_SPEED = 25;
+const ASTEROID_SPEED_INCREASE = 0.03;
 // Number of starting asteroids.
 const ASTEROID_COUNT = 30;
-
+const ASTEROID_SPLIT_FACTOR = 0.5;
 const COLLISION_SOLVER_ITERATIONS = 4;
+
+const PLAYER_COLLISION_RADIUS = 0.5;
+// Don't spawn asteroids too close to the center.
+const MIN_SPAWN_DISTANCE = PLAYER_COLLISION_RADIUS + 11.5;
 
 const BULLET_SPEED = 80;
 const BULLET_LIFETIME = 2.0;
-const ASTEROID_SPLIT_FACTOR = 0.5;
 const BULLET_FADE_TIME = 0.25;
-
 
 // =====================================================
 // SCENE SETUP
@@ -54,7 +51,7 @@ const scene = new Scene(engine);
 // =====================================================
 // BOUNDARY
 // =====================================================
-const BOUNDARY_RADIUS = 25; 
+const BOUNDARY_RADIUS = 30; 
 const BOUNDARY_MESH_DIAMETER = BOUNDARY_RADIUS * 2;
 
 
@@ -70,135 +67,262 @@ class Asteroid {
     sizeLevel;
 
     constructor(mesh, radius, position, velocity, sizeLevel = 0) {
-      this.mesh = mesh;
-      this.radius = radius;
-      this.position = position.clone();
-      this.velocity = velocity.clone();
-      this.sizeLevel = sizeLevel;
+        this.mesh = mesh;
+        this.radius = radius;
+        this.position = position.clone();
+        this.velocity = velocity.clone();
+        this.sizeLevel = sizeLevel;
 
-      this.mesh.position.copyFrom(this.position);
+        this.mesh.position.copyFrom(this.position);
+    }
+
+
+    increaseSpeed(amount) {
+        const speed = this.velocity.length();
+
+        if (speed < 0.00001) {
+            return;
+        }
+
+        const newSpeed = Math.min(speed * (1 + amount), MAX_ASTEROID_SPEED);
+
+        this.velocity.normalize().scaleInPlace(newSpeed);
     }
     
     // Updates position and returns the new position
-  updatePosition(deltaTime) {
-    this.position.addInPlace(this.velocity.scale(deltaTime));
+    updatePosition(deltaTime) {
+        const previousPosition = this.position.clone();
 
-    this.mesh.position.copyFrom(this.position);
+        this.position.addInPlace(this.velocity.scale(deltaTime));
+
+        this.mesh.position.copyFrom(this.position);
+
+        return previousPosition;
     }
-    
+        
     // Handles collision response with another asteroid
     static handleAsteroidCollision(a1, a2) {
-      const delta = a2.position.subtract(a1.position);
-      const distance = delta.length();
-      
-      const minimumDistance = a1.radius + a2.radius;
+        const delta = a2.position.subtract(a1.position);
+        const distance = delta.length();
+            
+        const minimumDistance = a1.radius + a2.radius;
 
-    // No collision
-    if (distance >= minimumDistance) {
-        return;
-    }
+        // No collision
+        if (distance >= minimumDistance) {
+            return;
+        }
 
-    // Avoid division by zero if two asteroids occupy exactly the same position
-    let normal;
+        // Avoid division by zero if two asteroids occupy exactly the same position
+        let normal;
 
-    if (distance > 0.00001) {
-        normal = delta.scale(1 / distance);
-    } else {
-        // Random fallback direction
-        normal = new Vector3(1, 0, 0);
-    }
+        if (distance > 0.00001) {
+            normal = delta.scale(1 / distance);
+        } else {
+            // Random fallback direction
+            normal = new Vector3(1, 0, 0);
+        }
 
 
-    // -------------------------------------------------
-    // Separate the asteroids
-    // -------------------------------------------------
-    const penetration = minimumDistance - distance;
+        // -------------------------------------------------
+        // Separate the asteroids
+        // -------------------------------------------------
+        const penetration = minimumDistance - distance;
 
-    // Equal masses -> move each asteroid half the penetration
-    const correction = normal.scale(penetration * 0.5);
+        // Equal masses -> move each asteroid half the penetration
+        const correction = normal.scale(penetration * 0.5);
 
-    a1.position.subtractInPlace(correction);
-    a2.position.addInPlace(correction);
+        a1.position.subtractInPlace(correction);
+        a2.position.addInPlace(correction);
 
-    a1.mesh.position.copyFrom(a1.position);
-    a2.mesh.position.copyFrom(a2.position);
+        a1.mesh.position.copyFrom(a1.position);
+        a2.mesh.position.copyFrom(a2.position);
 
-    // -------------------------------------------------
-    // 2. Calculate relative velocity
-    // -------------------------------------------------
-    const relativeVelocity = a2.velocity.subtract(a1.velocity);
+        // -------------------------------------------------
+        // 2. Calculate relative velocity
+        // -------------------------------------------------
+        const relativeVelocity = a2.velocity.subtract(a1.velocity);
 
-    // Velocity along collision normal
-    const velocityAlongNormal = relativeVelocity.dot(normal);
+        // Velocity along collision normal
+        const velocityAlongNormal = relativeVelocity.dot(normal);
 
-    // Already moving apart
-    if (velocityAlongNormal > 0) {
-        return;
-    }
+        // Already moving apart
+        if (velocityAlongNormal > 0) {
+            return;
+        }
 
-    // -------------------------------------------------
-    // 3. Elastic collision
-    // -------------------------------------------------
-    const restitution = 0.9;
+        // -------------------------------------------------
+        // 3. Elastic collision
+        // -------------------------------------------------
+        const restitution = 0.9;
 
-    // Equal masses
-    const impulseMagnitude = -(1 + restitution) * velocityAlongNormal / 2;
+        // Equal masses
+        const impulseMagnitude = -(1 + restitution) * velocityAlongNormal / 2;
 
-    const impulse = normal.scale(impulseMagnitude);
+        const impulse = normal.scale(impulseMagnitude);
 
-    a1.velocity.subtractInPlace(impulse);
-    a2.velocity.addInPlace(impulse);
-  }
-    
-    // Handles collision response with the boundary sphere
-  handleBoundaryCollision(boundaryRadius, incVariance) {
-      const distance = this.position.length();
+        a1.velocity.subtractInPlace(impulse);
+        a2.velocity.addInPlace(impulse);
+
+        const COLLISION_SPEED_INCREASE = 0.03;
         
-      const maximumCenterDistance = boundaryRadius - this.radius;
+        a1.velocity.scaleInPlace(1 + COLLISION_SPEED_INCREASE);
+        a2.velocity.scaleInPlace(1 + COLLISION_SPEED_INCREASE);
+    }
+        
+    // Handles collision response with the boundary sphere
+    handleBoundaryCollision(boundaryRadius, speedIncrease) {
+        const distance = this.position.length();
+            
+        const maximumCenterDistance = boundaryRadius - this.radius;
 
-      if (distance <= maximumCenterDistance) {
-          return;
-      }
+        if (distance <= maximumCenterDistance) {
+            return;
+        }
 
-      // Normal pointing from center toward asteroid
-      let normal;
+        // Normal pointing from center toward asteroid
+        let normal;
 
-      if (distance > 0.00001) {
-        normal = this.position.scale(1 / distance);
-      } else {
-        normal = new Vector3(1, 0, 0);
-      }
+        if (distance > 0.00001) {
+            normal = this.position.scale(1 / distance);
+        } else {
+            normal = new Vector3(1, 0, 0);
+        }
 
-      // -------------------------------------------------
-      // Put asteroid exactly back inside sphere
-      // -------------------------------------------------
-      this.position.copyFrom(normal.scale(maximumCenterDistance));
+        // -------------------------------------------------
+        // Put asteroid exactly back inside sphere
+        // -------------------------------------------------
+        this.position.copyFrom(normal.scale(maximumCenterDistance));
 
-      this.mesh.position.copyFrom(this.position);
+        this.mesh.position.copyFrom(this.position);
 
-      // -------------------------------------------------
-      // Determine if we're moving toward the wall
-      // -------------------------------------------------
+        // -------------------------------------------------
+        // Determine if we're moving toward the wall
+        // -------------------------------------------------
 
-      const velocityAlongNormal = this.velocity.dot(normal);
+        const velocityAlongNormal = this.velocity.dot(normal);
 
-      if (velocityAlongNormal <= 0) {
-        return;
-      }
-        // Reflect velocity
-          this.velocity.subtractInPlace(
-              normal.scale(2 * velocityAlongNormal)
-          );
+        if (velocityAlongNormal <= 0) {
+            return;
+        }
+            // Reflect velocity
+            this.velocity.subtractInPlace(
+                normal.scale(2 * velocityAlongNormal)
+            );
 
-          // Slight energy loss
-          this.velocity.scaleInPlace(0.9);
+            this.increaseSpeed(speedIncrease);
+    }
 
-          // Speed increase
-          const randomInc =
-              Math.random() * incVariance * 2 -
-              incVariance;
 
-          this.velocity.scaleInPlace(1 + randomInc);
+    resolveCenterCollision(centerRadius, speedIncrease, normal) {
+        const minimumDistance = centerRadius + this.radius;
+
+        // Put asteroid exactly outside the player's collision sphere.
+        this.position.copyFrom(normal.scale(minimumDistance));
+
+        this.mesh.position.copyFrom(this.position);
+
+        // Velocity toward the center?
+        const velocityTowardCenter = this.velocity.dot(normal);
+
+        if (velocityTowardCenter >= 0) {
+            return;
+        }
+
+        // Reflect velocity.
+        this.velocity.subtractInPlace(normal.scale(2 * velocityTowardCenter));
+
+        // Increase speed after hitting player.
+        this.increaseSpeed(speedIncrease);
+    }
+
+
+    handleCenterCollision(centerRadius, speedIncrease, previousPosition) {
+        // Safety check. This also prevents the solver passes
+        // from crashing if no previous position is supplied.
+        if (!previousPosition) {
+            const distance = this.position.length();
+            const collisionRadius = centerRadius + this.radius;
+
+            if (distance >= collisionRadius) {
+                return;
+            }
+
+            let normal;
+
+            if (distance > 0.00001) {
+                normal = this.position.normalize();
+            } else {
+                normal = new Vector3(1, 0, 0);
+            }
+
+            this.resolveCenterCollision(centerRadius, speedIncrease, normal);
+
+            return;
+        }
+
+        const collisionRadius = centerRadius + this.radius;
+
+        const movement = this.position.subtract(previousPosition);
+
+        const movementLengthSquared = movement.lengthSquared();
+
+        // -------------------------------------------------
+        // Very little movement
+        // -------------------------------------------------
+
+        if (movementLengthSquared < 0.000001) {
+            const distance = this.position.length();
+
+            if (distance >= collisionRadius) {
+                return;
+            }
+
+            let normal;
+
+            if (distance > 0.00001) {
+                normal = this.position.normalize();
+            } else {
+                normal = new Vector3(1, 0, 0);
+            }
+
+            this.resolveCenterCollision(centerRadius, speedIncrease, normal);
+
+            return;
+        }
+
+        // -------------------------------------------------
+        // Find closest point on movement segment to center
+        // -------------------------------------------------
+
+        const t = -previousPosition.dot(movement) / movementLengthSquared;
+
+        const clampedT = Math.max(0, Math.min(1, t));
+
+        const closestPoint = previousPosition.add(movement.scale(clampedT));
+
+        const closestDistance = closestPoint.length();
+
+        // No intersection.
+        if (closestDistance >= collisionRadius) {
+            return;
+        }
+
+        // -------------------------------------------------
+        // We crossed the player's collision sphere.
+        // Use the closest point to determine the bounce normal.
+        // -------------------------------------------------
+
+        let normal;
+
+        if (closestDistance > 0.00001) {
+            normal = closestPoint.normalize();
+        } else if (previousPosition.length() > 0.00001) {
+            normal = previousPosition.normalize();
+        } else {
+            normal = new Vector3(1, 0, 0);
+        }
+
+        this.resolveCenterCollision(centerRadius, speedIncrease, normal);
     }
 }
 
@@ -206,8 +330,28 @@ class Asteroid {
 function generateAsteroids(count) {
     for (let i = 0; i < count; i++) {
 
-        // Random radius
-        const radius = 0.5 + Math.random() * 5.0;
+        // Random size type
+        const sizeRoll = Math.random();
+
+        let sizeLevel;
+        let radius;
+        let subdivisions;
+
+        if (sizeRoll < 0.20) {
+            sizeLevel = 0; // 20% large
+            radius = 4.0;
+            subdivisions = 3;
+        } else if (sizeRoll < 0.55) {
+            sizeLevel = 1; // 35% medium
+            radius = 2.0;
+            subdivisions = 2;
+        } else {
+            sizeLevel = 2; // 45% small
+            radius = 1.0;
+            subdivisions = 1;
+        }
+
+        // Find a valid spawn position
 
         let position;
         let isValidPosition = false;
@@ -234,9 +378,8 @@ function generateAsteroids(count) {
                 continue;
             }
 
-            // ---------------------------------------------
+            
             // Don't spawn too close to the center
-            // ---------------------------------------------
 
             isValidPosition = true;
 
@@ -255,69 +398,63 @@ function generateAsteroids(count) {
               position = candidate;
               break;
             }
-          }
+        }
 
-            if (!position) {
-              console.warn(`Could not find a spawn position for asteroid ${i}`);
+        if (!position) {
+            console.warn(`Could not find a spawn position for asteroid ${i}`);
+            continue;
+        }
 
-              continue;
-            }
+        // Random velocity
+           
+        const direction = new Vector3(
+            Math.random() * 2 - 1,
+            Math.random() * 2 - 1,
+            Math.random() * 2 - 1
+        );
 
-            // ---------------------------------------------
-            // Random velocity
-            // ---------------------------------------------
+        if (direction.lengthSquared() < 0.00001) {
+            direction.set(1, 0, 0);
+        }
 
-            const direction = new Vector3(
-                Math.random() * 2 - 1,
-                Math.random() * 2 - 1,
-                Math.random() * 2 - 1
-            );
+        direction.normalize();
 
-            if (direction.lengthSquared() < 0.00001) {
-              direction.set(1, 0, 0);
-            }
+        const speed = BASE_ASTEROID_SPEED + Math.random() * 0.01;
+        const velocity = direction.scale(speed);
 
-            direction.normalize();
-
-            const speed = BASE_ASTEROID_SPEED + Math.random() * 0.01;
-            const velocity = direction.scale(speed);
-
-        // ---------------------------------------------
         // Mesh
-        // ---------------------------------------------
 
-          const mesh = MeshBuilder.CreateIcoSphere(`asteroid_${i}`,
+        const mesh = MeshBuilder.CreateIcoSphere(`asteroid_${i}`,
             {
-              radius: radius,
-              subdivisions: 2,
+            radius: radius,
+            subdivisions: subdivisions,
             },
             scene
-          );
+        );
 
-          deformAsteroid(mesh, radius, 0.35);
+        deformAsteroid(mesh, radius, 0.35);
 
-          const material = new StandardMaterial(`asteroidMat_${i}`,
-            scene
-          );
+        const material = new StandardMaterial(`asteroidMat_${i}`, scene);
 
-          const rockColor = 0.25 + Math.random() * 0.25;
+        const rockColor = 0.25 + Math.random() * 0.25;
 
-          material.diffuseColor = new Color3(rockColor * 1.1, rockColor, rockColor * 0.9);
+        material.diffuseColor = new Color3(rockColor * 1.1, rockColor, rockColor * 0.9);
 
-          material.specularColor = new Color3(0.05, 0.05, 0.05);
+        material.specularColor = new Color3(0.05, 0.05, 0.05);
 
-          mesh.material = material;
+        mesh.material = material;
 
         // ---------------------------------------------
         // Asteroid
         // ---------------------------------------------
 
-          const asteroid = new Asteroid(
-              mesh,
-              radius,
-              position,
-              velocity
-          );
+        const asteroid = new Asteroid(
+            mesh,
+            radius,
+            position,
+            velocity,
+            sizeLevel
+        );
 
         asteroids.push(asteroid);
     }
@@ -478,10 +615,20 @@ function splitAsteroid(asteroid) {
         return;
     }
 
+    const newSizeLevel = asteroid.sizeLevel + 1;
     const newRadius = asteroid.radius * ASTEROID_SPLIT_FACTOR;
 
-    for (let i = 0; i < 2; i++) {
+    let subdivisions;
 
+    if (newSizeLevel === 0) {
+        subdivisions = 3;
+    } else if (newSizeLevel === 1) {
+        subdivisions = 2;
+    } else {
+        subdivisions = 1;
+    }
+
+    for (let i = 0; i < 2; i++) {
         // Create two different directions
         const direction = new Vector3(
             Math.random() * 2 - 1,
@@ -502,10 +649,7 @@ function splitAsteroid(asteroid) {
 
         const mesh = MeshBuilder.CreateIcoSphere(
             `asteroid_split_${Date.now()}_${i}`,
-            {
-                radius: newRadius,
-                subdivisions: 1,
-            },
+            {radius: newRadius, subdivisions: subdivisions,},
             scene
         );
 
@@ -568,19 +712,16 @@ document.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("mousemove", (event) => {
-  // Only move camera when pointer is locked
-  if (document.pointerLockElement !== canvas) {
-    return;
-  }
+    // Only move camera when pointer is locked
+    if (document.pointerLockElement !== canvas) {
+        return;
+    }
 
-  camera.alpha -= event.movementX * mouseSensitivity;
-  camera.beta -= event.movementY * mouseSensitivity;
+    camera.alpha -= event.movementX * mouseSensitivity;
+    camera.beta -= event.movementY * mouseSensitivity;
 
-  // Prevent looking completely upside down
-  camera.beta = Math.max(
-    0.1,
-    Math.min(Math.PI - 0.1, camera.beta)
-  );
+    // Prevent looking completely upside down
+    camera.beta = Math.max(0.1, Math.min(Math.PI - 0.1, camera.beta));
 });
 
 // =====================================================
@@ -598,12 +739,12 @@ const light = new HemisphericLight(
 // =====================================================
 
 const sphere = MeshBuilder.CreateSphere(
-  "playerSphere",
-  {
-    diameter: BOUNDARY_MESH_DIAMETER,
-    segments: 160
-  },
-  scene
+    "playerSphere",
+    {
+        diameter: BOUNDARY_MESH_DIAMETER,
+        segments: 160
+    },
+    scene
 );
 
 // Put sphere at the player's position
@@ -624,23 +765,23 @@ const gui = AdvancedDynamicTexture.CreateFullscreenUI("UI");
 
 // Circle
 const circle = new Ellipse();
-circle.width = "40px";
-circle.height = "40px";
+circle.width = "80px";
+circle.height = "80px";
 circle.color = "red";
-circle.thickness = 3;
+circle.thickness = 5;
 circle.background = "transparent";
 
 // Horizontal line
 const horizontal = new Rectangle();
-horizontal.width = "38px";
-horizontal.height = "3px";
+horizontal.width = "78px";
+horizontal.height = "4px";
 horizontal.background = "red";
 horizontal.thickness = 0;
 
 // Vertical line
 const vertical = new Rectangle();
-vertical.width = "3px";
-vertical.height = "38px";
+vertical.width = "4px";
+vertical.height = "78px";
 vertical.background = "red";
 vertical.thickness = 0;
 
@@ -654,24 +795,36 @@ gui.addControl(vertical);
 // Game Loop (Physics Update)
 // =====================================================
 engine.runRenderLoop(() => {
-  // 1. Asteroid-Asteroid Collision Checks
-  const deltaTime =
-    engine.getDeltaTime() / 1000;
-    
-  const clampedDeltaTime = Math.min(deltaTime, 0.033);
+    // Asteroid-Asteroid Collision Checks
+    const deltaTime = engine.getDeltaTime() / 1000;
+        
+    const clampedDeltaTime = Math.min(deltaTime, 0.033);
 
-  for (const asteroid of asteroids) {
-        asteroid.updatePosition(clampedDeltaTime);
-    }
+    // 1. Move
+    const previousPositions = new Map();
 
-    // 2. Boundary collisions
     for (const asteroid of asteroids) {
-        asteroid.handleBoundaryCollision(BOUNDARY_RADIUS, ASTEROID_INC_VARIANCE);
+        const previousPosition = asteroid.updatePosition(clampedDeltaTime);
+
+        previousPositions.set(asteroid, previousPosition);
     }
 
-    // 3. Asteroid collisions
-    for (let iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; iteration++) {
+    // 2. Center/player collision
+    for (const asteroid of asteroids) {
+        asteroid.handleCenterCollision(
+            PLAYER_COLLISION_RADIUS,
+            ASTEROID_SPEED_INCREASE,
+            previousPositions.get(asteroid)
+        );
+    }
 
+    // 3. Outer Boundary collisions
+    for (const asteroid of asteroids) {
+        asteroid.handleBoundaryCollision(BOUNDARY_RADIUS, ASTEROID_SPEED_INCREASE);
+    }
+
+    // 4. Asteroid-asteroid collisions
+    for (let iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; iteration++) {
         for (let i = 0; i < asteroids.length; i++) {
             for (let j = i + 1; j < asteroids.length; j++) {
                 Asteroid.handleAsteroidCollision(asteroids[i], asteroids[j]);
@@ -679,10 +832,10 @@ engine.runRenderLoop(() => {
         }
 
         // Re-check the outer boundary after
-        // asteroid collisions have pushed things around.
         for (const asteroid of asteroids) {
             asteroid.handleBoundaryCollision(BOUNDARY_RADIUS, 0);
         }
+
     }
 
     for (let i = bullets.length - 1; i >= 0; i--) {
