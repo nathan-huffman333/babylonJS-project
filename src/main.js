@@ -15,7 +15,9 @@ import {
   AdvancedDynamicTexture,
   Rectangle,
   Ellipse,
-  TextBlock
+  TextBlock,
+  Button,
+  Control
 } from "@babylonjs/gui";
 
 import "./style.css";
@@ -24,15 +26,15 @@ import "./style.css";
 // CONFIGURATION VARIABLES
 // =====================================================
 // Variables to control initial, end, and adding asteroid speeds
-const BASE_ASTEROID_SPEED = 6.0; 
-const MAX_ASTEROID_SPEED = 25;
+const BASE_ASTEROID_SPEED = 5.0; 
+const MAX_ASTEROID_SPEED = 6.5;
 const ASTEROID_SPEED_INCREASE = 0.03;
 // Number of starting asteroids.
-const ASTEROID_COUNT = 32;
+const ASTEROID_COUNT = 20;
 const ASTEROID_SPLIT_FACTOR = 0.5;
 const COLLISION_SOLVER_ITERATIONS = 4;
 
-const PLAYER_COLLISION_RADIUS = 1;
+const PLAYER_COLLISION_RADIUS = 1.5;
 // Don't spawn asteroids too close to the center.
 const MIN_SPAWN_DISTANCE = PLAYER_COLLISION_RADIUS + 11.5;
 
@@ -45,6 +47,7 @@ const ASTEROID_DAMAGE = 25;
 const PLAYER_DAMAGE_COOLDOWN = 1.0;
 let playerDamageCooldown = 0;
 let playerHealth = PLAYER_MAX_HEALTH;
+let gameOver = false;
 
 // =====================================================
 // SCENE SETUP
@@ -57,7 +60,7 @@ const scene = new Scene(engine);
 // =====================================================
 // BOUNDARY
 // =====================================================
-const BOUNDARY_RADIUS = 25; 
+const BOUNDARY_RADIUS = 20; 
 const BOUNDARY_MESH_DIAMETER = BOUNDARY_RADIUS * 2;
 
 
@@ -546,7 +549,7 @@ class Bullet {
             scene
         );
 
-        this.material.diffuseColor = new Color3(1, 1, 0);
+        this.material.diffuseColor = new Color3(1, 0, 0);
 
         this.material.alpha = 1.0;
 
@@ -591,6 +594,9 @@ class Bullet {
 
 
 function shoot() {
+    if (gameOver) {
+        return;
+    }
     // Get the center of the screen
     const screenX = engine.getRenderWidth() / 2;
     const screenY = engine.getRenderHeight() / 2;
@@ -624,6 +630,7 @@ function splitAsteroid(asteroid) {
 
     // Remove the old asteroid
     asteroid.mesh.dispose();
+    
     asteroids.splice(index, 1);
 
     // Small asteroids simply disappear
@@ -636,9 +643,7 @@ function splitAsteroid(asteroid) {
 
     let subdivisions;
 
-    if (newSizeLevel === 0) {
-        subdivisions = 3;
-    } else if (newSizeLevel === 1) {
+    if (newSizeLevel === 1) {
         subdivisions = 2;
     } else {
         subdivisions = 1;
@@ -711,9 +716,54 @@ function damagePlayer(amount) {
 
 
 function playerDied() {
-    console.log("Player died");
+    if (gameOver) {
+        return;
+    }
 
-    // Stop gameplay here, or show a game-over screen.
+    gameOver = true;
+
+    // Show game-over screen
+    gameOverBackground.isVisible = true;
+    gameOverText.isVisible = true;
+    restartButton.isVisible = true;
+
+    if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+    }
+}
+
+
+function restartGame() {
+    // Reset game state
+    gameOver = false;
+    playerHealth = PLAYER_MAX_HEALTH;
+    playerDamageCooldown = 0;
+
+    // Update health display
+    healthText.text =
+        `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
+
+    // Remove all asteroids
+    for (const asteroid of asteroids) {
+        asteroid.mesh.dispose();
+    }
+
+    asteroids.length = 0;
+
+    // Remove all bullets
+    for (const bullet of bullets) {
+        bullet.destroy();
+    }
+
+    bullets.length = 0;
+
+    // Create new asteroids
+    generateAsteroids(ASTEROID_COUNT);
+
+    // Hide game-over screen
+    gameOverBackground.isVisible = false;
+    gameOverText.isVisible = false;
+    restartButton.isVisible = false;
 }
 
 
@@ -741,6 +791,10 @@ document.addEventListener("pointerdown", (event) => {
         return;
     }
 
+    if (gameOver) {
+        return;
+    }
+
     if (document.pointerLockElement !== canvas) {
         canvas.requestPointerLock();
     }
@@ -765,10 +819,11 @@ canvas.addEventListener("mousemove", (event) => {
 // Light
 // =====================================================
 
+
 const light = new HemisphericLight(
-  "light",
-  new Vector3(0, 1, 0),
-  scene
+    "light",
+    new Vector3(0, 1, 0),
+    scene
 );
 
 // =====================================================
@@ -837,11 +892,9 @@ healthText.text = `Health: ${playerHealth}/${PLAYER_MAX_HEALTH}`;
 healthText.color = "white";
 healthText.fontSize = 24;
 
-healthText.textHorizontalAlignment =
-    TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
+healthText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_LEFT;
 
-healthText.textVerticalAlignment =
-    TextBlock.VERTICAL_ALIGNMENT_TOP;
+healthText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_TOP;
 
 healthText.left = "20px";
 healthText.top = "20px";
@@ -849,11 +902,78 @@ healthText.top = "20px";
 gui.addControl(healthText);
 
 // =====================================================
+// Game Over GUI
+// =====================================================
+const gameOverBackground = new Rectangle();
+
+gameOverBackground.width = "100%";
+gameOverBackground.height = "100%";
+gameOverBackground.background = "black";
+gameOverBackground.alpha = 0.7;
+gameOverBackground.thickness = 0;
+gameOverBackground.isVisible = false;
+
+gui.addControl(gameOverBackground);
+
+const gameOverText = new TextBlock();
+
+gameOverText.text = "GAME OVER";
+gameOverText.color = "red";
+gameOverText.fontSize = 80;
+gameOverText.fontWeight = "bold";
+
+gameOverText.textHorizontalAlignment = TextBlock.HORIZONTAL_ALIGNMENT_CENTER;
+
+gameOverText.textVerticalAlignment = TextBlock.VERTICAL_ALIGNMENT_CENTER;
+
+gameOverText.isVisible = false;
+
+gui.addControl(gameOverText);
+
+// =====================================================
+// Restart Button
+// =====================================================
+
+const restartButton = Button.CreateSimpleButton(
+    "restartButton",
+    "RESTART"
+);
+
+restartButton.width = "200px";
+restartButton.height = "60px";
+
+restartButton.color = "white";
+restartButton.background = "red";
+
+restartButton.cornerRadius = 10;
+restartButton.fontSize = 24;
+
+restartButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+
+restartButton.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+
+restartButton.top = "100px";
+
+restartButton.isVisible = false;
+
+gui.addControl(restartButton);
+
+restartButton.onPointerUpObservable.add(() => {
+    restartGame();
+});
+
+// =====================================================
 // Game Loop (Physics Update)
 // =====================================================
 engine.runRenderLoop(() => {
     const deltaTime = engine.getDeltaTime() / 1000;
     const clampedDeltaTime = Math.min(deltaTime, 0.033);
+
+    if (gameOver) {
+        scene.render();
+        return;
+    }
+
     playerDamageCooldown -= clampedDeltaTime;
 
     // Move asteroids
